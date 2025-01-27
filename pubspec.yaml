@@ -1,0 +1,20 @@
+name: calendar_week
+description: A simple interface of a calendar week with the possibility of adding notes for each day.
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=2.12.0 <3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  table_calendar: ^3.0.0
+  http: ^1.1.0 
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
