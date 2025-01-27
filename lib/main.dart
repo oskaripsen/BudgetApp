@@ -36,6 +36,7 @@ class _CalendarWeekState extends State<CalendarWeek> {
   final TextEditingController _chatController = TextEditingController(); // Add this line
   bool _isLoadingResponse = false;
   final ScrollController _scrollController = ScrollController();
+  String _currentAlias = 'default';  // Add this line
 
   @override
   void initState() {
@@ -271,6 +272,41 @@ class _CalendarWeekState extends State<CalendarWeek> {
           'Budget Tracker',
           style: TextStyle(color: Colors.white),
         ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: DropdownButton<String>(
+              value: _currentAlias,
+              style: TextStyle(color: Colors.white),
+              dropdownColor: Color(0xFF123456),
+              onChanged: (String? newValue) async {
+                if (newValue != null) {
+                  setState(() {
+                    _currentAlias = newValue;
+                    _notes.clear();
+                  });
+                  final entries = await ChatService.loadBudgetEntries(_currentAlias);
+                  setState(() {
+                    for (var entry in entries) {
+                      final date = DateTime.parse(entry['date']);
+                      if (_notes[date] == null) {
+                        _notes[date] = [];
+                      }
+                      _notes[date]!.add(entry);
+                    }
+                  });
+                }
+              },
+              items: ['default', 'family', 'personal', 'business']
+                  .map<DropdownMenuItem<String>>((String value) {
+                return DropdownMenuItem<String>(
+                  value: value,
+                  child: Text(value, style: TextStyle(color: Colors.white)),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
       ),
       body: Column(
         children: [

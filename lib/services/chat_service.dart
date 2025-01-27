@@ -39,10 +39,11 @@ class ChatService {
     }
   }
 
-  static Future<void> saveBudgetEntry(Map<String, dynamic> entry) async {
+  static Future<void> saveBudgetEntry(Map<String, dynamic> entry, String alias) async {
     try {
+      entry['alias'] = alias;  // Add alias to entry
       await http.post(
-        Uri.parse(_baseUrl.replaceAll('/chat', '/budget')),
+        Uri.parse('$_baseUrl/budget'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(entry),
       );
@@ -51,10 +52,10 @@ class ChatService {
     }
   }
 
-  static Future<List<Map<String, dynamic>>> loadBudgetEntries() async {
+  static Future<List<Map<String, dynamic>>> loadBudgetEntries(String alias) async {
     try {
       final response = await http.get(
-        Uri.parse(_baseUrl.replaceAll('/chat', '/budget')),
+        Uri.parse('$_baseUrl/budget?alias=$alias'),
       );
       if (response.statusCode == 200) {
         return List<Map<String, dynamic>>.from(jsonDecode(response.body));
