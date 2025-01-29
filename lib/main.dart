@@ -36,7 +36,6 @@ class _CalendarWeekState extends State<CalendarWeek> {
   final TextEditingController _chatController = TextEditingController(); // Add this line
   bool _isLoadingResponse = false;
   final ScrollController _scrollController = ScrollController();
-  String _currentAlias = 'default';  // Add this line
 
   @override
   void initState() {
@@ -76,17 +75,32 @@ class _CalendarWeekState extends State<CalendarWeek> {
     }
   }
 
-  double _calculateTotalBudget() {
-    double total = 0;
-    DateTime startDate = _customStartDate ?? _focusedDay.subtract(Duration(days: _focusedDay.weekday - 1));
-    DateTime endDate = _customEndDate ?? _focusedDay.add(Duration(days: DateTime.daysPerWeek - _focusedDay.weekday));
-    
-    _notes.forEach((date, notes) {
-      if (date.isAfter(startDate.subtract(Duration(days: 1))) && date.isBefore(endDate.add(Duration(days: 1)))) {
-        total += notes.fold(0, (sum, item) => sum + item['amount']);
-      }
+  void _clearCustomDateRange() {
+    setState(() {
+      _customStartDate = null;
+      _customEndDate = null;
+      _calendarFormat = CalendarFormat.week; // Reset to default view
     });
-    return total;
+  }
+
+  bool _areAllExpensesSettled() {
+    if (_selectedDay == null || _notes[_selectedDay!] == null) return false;
+    return _notes[_selectedDay!]!.every((note) => note['settled'] == true);
+  }
+
+  double _calculateTotalBudget() {
+    if (_selectedDay == null || _notes[_selectedDay!] == null) return 0;
+    return _notes[_selectedDay!]!.fold(0, (sum, item) => sum + (item['amount'] ?? 0));
+  }
+
+  double _calculateTotalActual() {
+    if (_selectedDay == null || _notes[_selectedDay!] == null) return 0;
+    return _notes[_selectedDay!]!.fold(0, (sum, item) => sum + (item['actual'] ?? item['amount'] ?? 0));
+  }
+
+  String _calculateDelta() {
+    double delta = _calculateTotalActual() - _calculateTotalBudget();
+    return delta >= 0 ? '+\$${delta.toStringAsFixed(2)}' : '-\$${(-delta).toStringAsFixed(2)}';
   }
 
   Future<void> _sendMessage(String message, [StateSetter? setModalState]) async {
@@ -262,6 +276,210 @@ class _CalendarWeekState extends State<CalendarWeek> {
     );
   }
 
+  void _showSettleExpensesDialog() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setModalState) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.75,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(20),
+                  topRight: Radius.circular(20),
+                ),
+              ),
+              child: Column(
+                children: [
+                  // Header
+                  Container(
+                    padding: EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Color(0xFF123456),
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(20),
+                        topRight: Radius.circular(20),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          'Settle Expenses',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Spacer(),
+                        IconButton(
+                          icon: Icon(Icons.close, color: Colors.white),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Expenses list
+                  Expanded(
+                    child: ListView.builder(
+                      padding: EdgeInsets.all(16),
+                      itemCount: _notes[_selectedDay]?.length ?? 0,
+                      itemBuilder: (context, index) {
+                        final note = _notes[_selectedDay]![index];
+                        final TextEditingController actualController = TextEditingController();
+                        final TextEditingController titleController = TextEditingController(text: note['title']);
+                        String selectedCurrency = note['currency'];
+
+                        return Row(
+                          children: [
+                            Icon(
+                              note['settled'] == true
+                                  ? Icons.check_circle
+                                  : Icons.help_outline,
+                              color: note['settled'] == true ? Colors.blue : Colors.grey,
+                            ),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (note['isEditing'] ?? false)
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: TextField(
+                                            controller: titleController,
+                                            decoration: InputDecoration(
+                                              labelText: 'Title',
+                                            ),
+                                            onSubmitted: (value) {
+                                              setModalState(() {
+                                                note['title'] = value;
+                                              });
+                                            },
+                                          ),
+                                        ),
+                                        SizedBox(width: 8),
+                                        Container(
+                                          width: 80,
+                                          child: TextField(
+                                            controller: actualController,
+                                            decoration: InputDecoration(
+                                              labelText: 'Actual',
+                                            ),
+                                            keyboardType: TextInputType.number,
+                                            onSubmitted: (value) {
+                                              setModalState(() {
+                                                note['actual'] = double.parse(value);
+                                                note['isEditing'] = false;
+                                                note['settled'] = true;
+                                              });
+                                              setState(() {}); // Update the state immediately
+                                            },
+                                          ),
+                                        ),
+                                        SizedBox(width: 8),
+                                        DropdownButton<String>(
+                                          value: selectedCurrency,
+                                          onChanged: (String? newValue) {
+                                            setModalState(() {
+                                              selectedCurrency = newValue!;
+                                              note['currency'] = newValue;
+                                            });
+                                          },
+                                          items: <String>['CHF', 'USD', 'DKK']
+                                              .map<DropdownMenuItem<String>>((String value) {
+                                            return DropdownMenuItem<String>(
+                                              value: value,
+                                              child: Text(value),
+                                            );
+                                          }).toList(),
+                                        ),
+                                        SizedBox(width: 8),
+                                        ElevatedButton(
+                                          onPressed: () {
+                                            setModalState(() {
+                                              note['actual'] = double.parse(actualController.text);
+                                              note['isEditing'] = false;
+                                              note['settled'] = true;
+                                            });
+                                            setState(() {}); // Update the state immediately
+                                          },
+                                          child: Text('OK'),
+                                        ),
+                                      ],
+                                    )
+                                  else
+                                    Text(note['title'], style: TextStyle(fontWeight: FontWeight.bold)),
+                                  Text('Projected: \$${note['amount'].toStringAsFixed(2)}', style: TextStyle(color: Colors.grey)),
+                                ],
+                              ),
+                            ),
+                            if (!(note['isEditing'] ?? false))
+                              IconButton(
+                                icon: Icon(Icons.check, color: Colors.green),
+                                onPressed: () {
+                                  setModalState(() {
+                                    note['actual'] = note['amount'];
+                                    note['settled'] = true;
+                                  });
+                                  setState(() {}); // Update the state immediately
+                                },
+                              ),
+                            IconButton(
+                              icon: Icon(Icons.edit, color: Colors.grey),
+                              onPressed: () {
+                                setModalState(() {
+                                  note['isEditing'] = !(note['isEditing'] ?? false);
+                                });
+                              },
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                  // Add other expenses
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: ElevatedButton(
+                      onPressed: () {
+                        setModalState(() {
+                          _notes[_selectedDay]?.add({
+                            'title': 'New Expense',
+                            'amount': 0.0,
+                            'currency': _selectedCurrency,
+                            'isEditing': true,
+                          });
+                        });
+                      },
+                      child: Text('Add other expenses'),
+                    ),
+                  ),
+                  // Done button
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        setState(() {}); // Update the state immediately
+                      },
+                      child: Text('Done'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -272,41 +490,6 @@ class _CalendarWeekState extends State<CalendarWeek> {
           'Budget Tracker',
           style: TextStyle(color: Colors.white),
         ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: DropdownButton<String>(
-              value: _currentAlias,
-              style: TextStyle(color: Colors.white),
-              dropdownColor: Color(0xFF123456),
-              onChanged: (String? newValue) async {
-                if (newValue != null) {
-                  setState(() {
-                    _currentAlias = newValue;
-                    _notes.clear();
-                  });
-                  final entries = await ChatService.loadBudgetEntries(_currentAlias);
-                  setState(() {
-                    for (var entry in entries) {
-                      final date = DateTime.parse(entry['date']);
-                      if (_notes[date] == null) {
-                        _notes[date] = [];
-                      }
-                      _notes[date]!.add(entry);
-                    }
-                  });
-                }
-              },
-              items: ['default', 'family', 'personal', 'business']
-                  .map<DropdownMenuItem<String>>((String value) {
-                return DropdownMenuItem<String>(
-                  value: value,
-                  child: Text(value, style: TextStyle(color: Colors.white)),
-                );
-              }).toList(),
-            ),
-          ),
-        ],
       ),
       body: Column(
         children: [
@@ -395,6 +578,10 @@ class _CalendarWeekState extends State<CalendarWeek> {
                         );
                       }).toList(),
                     ),
+                    IconButton(
+                      icon: Icon(Icons.clear, size: 20, color: Colors.grey),
+                      onPressed: _clearCustomDateRange,
+                    ),
                   ],
                 );
               },
@@ -414,6 +601,15 @@ class _CalendarWeekState extends State<CalendarWeek> {
                   return Center(child: Text('${day.day}'));
                 }
               },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Text(
+              'Daily spending: \$${_calculateTotalActual().toStringAsFixed(2)}'
+              ' (Delta: ${_calculateDelta()})'
+              '${_areAllExpensesSettled() ? " (All expenses settled)" : ""}',
+              style: TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
           Padding(
@@ -485,6 +681,14 @@ class _CalendarWeekState extends State<CalendarWeek> {
               ],
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Text(
+              'Daily budget: \$${_calculateTotalBudget().toStringAsFixed(2)}'
+              '${_areAllExpensesSettled() ? " (All expenses settled)" : ""}',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
           Expanded(
             child: _selectedDay == null || _notes[_selectedDay!] == null
                 ? Center(child: Text('No expenses for the selected day'))
@@ -494,7 +698,7 @@ class _CalendarWeekState extends State<CalendarWeek> {
                       Padding(
                         padding: const EdgeInsets.all(8.0),
                         child: Text(
-                          'Daily budget: \$${_notes[_selectedDay!]!.fold<double>(0, (sum, item) => sum + item['amount']).toStringAsFixed(2)}',
+                          'Daily budget: \$${_calculateTotalBudget().toStringAsFixed(2)}',
                           style: TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ),
@@ -513,6 +717,8 @@ class _CalendarWeekState extends State<CalendarWeek> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text('\$${note['amount'].toStringAsFixed(2)}'),
+                                  Text(' / \$${(note['actual'] ?? note['amount']).toStringAsFixed(2)}'),
+                                  Text(' (Delta: \$${((note['actual'] ?? note['amount']) - note['amount']).toStringAsFixed(2)})'),
                                   IconButton(
                                     icon: Icon(Icons.close, color: Color(0xFF123456)),
                                     onPressed: () {
@@ -532,6 +738,13 @@ class _CalendarWeekState extends State<CalendarWeek> {
                       ),
                     ],
                   ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: ElevatedButton(
+              onPressed: _showSettleExpensesDialog,
+              child: Text('Settle Expenses'),
+            ),
           ),
         ],
       ),
