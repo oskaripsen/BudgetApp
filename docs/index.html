@@ -21,9 +21,17 @@
   <link rel="manifest" href="manifest.json">
 
   <!-- Add Content Security Policy -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline';">
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self'; 
+    script-src 'self' 'unsafe-eval' https://www.gstatic.com https://fonts.googleapis.com; 
+    style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; 
+    font-src 'self' https://fonts.gstatic.com; 
+    connect-src 'self' https://www.gstatic.com; 
+    img-src 'self' data:;     object-src 'none';  ">
 </head>
 <body>
-  <script src="flutter_bootstrap.js" async></script>
+  <script src="flutter.js" defer></script>
+  <script src="flutter_service_worker.js" defer></script>
+  <script src="main.dart.js" defer></script>
 </body>
 </html>
