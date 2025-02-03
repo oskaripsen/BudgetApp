@@ -60,6 +60,30 @@ class ChatService {
     }
   }
 
+  static Future<void> updateBudgetEntry(Map<String, dynamic> entry) async {
+    try {
+      final payload = entry;
+      
+      print('Updating entry with payload: ${jsonEncode(payload)}'); // Debug print
+      
+      final response = await http.put(
+        Uri.parse('$_baseUrl/budget'), // Corrected to match backend routes
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(payload),
+      );
+
+      print('Update response status: ${response.statusCode}'); // Debug print
+      print('Update response body: ${response.body}'); // Debug print
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to update entry: ${response.body}');
+      }
+    } catch (e) {
+      print('Error updating entry: $e');
+      rethrow;
+    }
+  }
+
   static Future<void> deleteBudgetEntry(Map<String, dynamic> entry) async {
     try {
       final url = Uri.parse('$_baseUrl/budget');

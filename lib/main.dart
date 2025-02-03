@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
+import 'package:syncfusion_flutter_charts/charts.dart';  // Use syncfusion_flutter_charts instead of fl_chart
 import 'services/chat_service.dart';
 
 void main() {
@@ -11,6 +12,9 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       home: CalendarWeek(),
+      routes: {
+        '/dashboard': (context) => DashboardPage(),
+      },
     );
   }
 }
@@ -40,6 +44,7 @@ class _CalendarWeekState extends State<CalendarWeek> {
   @override
   void initState() {
     super.initState();
+    _loadExpenses();
     // Add welcome message
     _chatMessages.add({
       'text': 'Welcome! I\'m your AI budget assistant. You can ask me questions about your spending patterns, get budgeting advice, or request spending summaries. For example:\n\n• How much did I spend this week?\n• What\'s my biggest expense category?\n• Can you analyze my spending habits?\n• Show me my daily averages.',
@@ -89,18 +94,45 @@ class _CalendarWeekState extends State<CalendarWeek> {
   }
 
   double _calculateTotalBudget() {
-    if (_selectedDay == null || _notes[_selectedDay!] == null) return 0;
-    return _notes[_selectedDay!]!.fold(0, (sum, item) => sum + (item['amount'] ?? 0));
+  DateTime startDate;
+  DateTime endDate;
+
+  if (_calendarFormat == CalendarFormat.month) {
+    startDate = DateTime(_focusedDay.year, _focusedDay.month, 1);
+    endDate = DateTime(_focusedDay.year, _focusedDay.month + 1, 0);
+  } else if (_calendarFormat == CalendarFormat.week) {
+    startDate = _focusedDay.subtract(Duration(days: _focusedDay.weekday - 1));
+    endDate = _focusedDay.add(Duration(days: DateTime.daysPerWeek - _focusedDay.weekday));
+  } else if (_customStartDate != null && _customEndDate != null) {
+    startDate = _customStartDate!;
+    endDate = _customEndDate!;
+  } else {
+    return 0;
   }
 
+  double totalBudget = 0;
+  _notes.forEach((date, notes) {
+    if (date.isAfter(startDate.subtract(Duration(days: 1))) && date.isBefore(endDate.add(Duration(days: 1)))){
+      totalBudget += notes.fold(0, (sum, item) => sum + (item['amount'] ?? 0));
+    }
+  });
+
+  return totalBudget;
+}
+
+double _calculateDailyBudget() {
+  if (_selectedDay == null || _notes[_selectedDay!] == null) return 0;
+  return _notes[_selectedDay!]!.fold(0, (sum, item) => sum + (item['amount'] ?? 0));
+}
+
   double _calculateTotalActual() {
-    if (_selectedDay == null || _notes[_selectedDay!] == null) return 0;
-    return _notes[_selectedDay!]!.fold(0, (sum, item) => sum + (item['actual'] ?? item['amount'] ?? 0));
+  if (_selectedDay == null || _notes[_selectedDay!] == null) return 0;
+  return _notes[_selectedDay!]!.fold(0, (sum, item) => sum + (item['actual']?.toDouble() ?? item['projected_amount']?.toDouble() ?? 0.0));
   }
 
   String _calculateDelta() {
-    double delta = _calculateTotalActual() - _calculateTotalBudget();
-    return delta >= 0 ? '+\$${delta.toStringAsFixed(2)}' : '-\$${(-delta).toStringAsFixed(2)}';
+  double delta = (_calculateTotalActual() - _calculateTotalBudget()).toDouble();
+  return delta >= 0 ? '+\$${delta.toStringAsFixed(2)}' : '-\$${(-delta).toStringAsFixed(2)}';
   }
 
   Future<void> _sendMessage(String message, [StateSetter? setModalState]) async {
@@ -490,6 +522,14 @@ class _CalendarWeekState extends State<CalendarWeek> {
           'Budget Tracker',
           style: TextStyle(color: Colors.white),
         ),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.dashboard),
+            onPressed: () {
+              Navigator.pushNamed(context, '/dashboard');
+            },
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -659,7 +699,13 @@ class _CalendarWeekState extends State<CalendarWeek> {
                 ),
                 ElevatedButton(
                   onPressed: () {
-                    if (_selectedDay != null && _titleController.text.isNotEmpty && _amountController.text.isNotEmpty) {
+                    if (_selectedDay == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Please select a date first.')),
+                      );
+                      return;
+                    }
+                    if (_titleController.text.isNotEmpty && _amountController.text.isNotEmpty) {
                       setState(() {
                         if (_notes[_selectedDay!] == null) {
                           _notes[_selectedDay!] = [];
@@ -668,7 +714,7 @@ class _CalendarWeekState extends State<CalendarWeek> {
                           'title': _titleController.text,
                           'description': _descriptionController.text,
                           'amount': double.parse(_amountController.text),
-                          'currency': _selectedCurrency, // Add this line
+                          'currency': _selectedCurrency,
                         });
                         _titleController.clear();
                         _descriptionController.clear();
@@ -676,7 +722,7 @@ class _CalendarWeekState extends State<CalendarWeek> {
                       });
                     }
                   },
-                  child: Text('Add Cost'),  // Changed from 'Add Expense' to 'Add Cost'
+                  child: Text('Add Cost'),
                 ),
               ],
             ),
@@ -684,7 +730,7 @@ class _CalendarWeekState extends State<CalendarWeek> {
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: Text(
-              'Daily budget: \$${_calculateTotalBudget().toStringAsFixed(2)}'
+              'Daily budget: \$${_calculateDailyBudget().toStringAsFixed(2)}'
               '${_areAllExpensesSettled() ? " (All expenses settled)" : ""}',
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
@@ -763,4 +809,209 @@ class _CalendarWeekState extends State<CalendarWeek> {
       'September', 'October', 'November', 'December'
     ][month - 1];
   }
+
+  void _addOrUpdateExpense(Map<String, dynamic> expense) async {
+    try {
+      if (expense['id'] == null) {
+        await ChatService.saveBudgetEntry(expense);
+      } else {
+        await ChatService.updateBudgetEntry(expense);
+      }
+      _loadExpenses();
+    } catch (e) {
+      print('Error saving/updating expense: $e');
+    }
+  }
+
+  void _deleteExpense(int id) async {
+    try {
+      await ChatService.deleteBudgetEntry({'id': id});
+      _loadExpenses();
+    } catch (e) {
+      print('Error deleting expense: $e');
+    }
+  }
+
+  void _loadExpenses() async {
+    try {
+      final expenses = await ChatService.loadBudgetEntries();
+      setState(() {
+        _notes = {};
+        for (var expense in expenses) {
+          final date = DateTime.parse(expense['date']);
+          if (_notes[date] == null) {
+            _notes[date] = [];
+          }
+          _notes[date]!.add(expense);
+        }
+      });
+    } catch (e) {
+      print('Error loading expenses: $e');
+    }
+  }
+}
+
+class DashboardPage extends StatefulWidget {
+  @override
+  _DashboardPageState createState() => _DashboardPageState();
+}
+
+class _DashboardPageState extends State<DashboardPage> {
+  List<_SpendingData> _spendingData = [];
+  List<_CategoryData> _categoryData = [];
+  String _aiInsights = '';
+  String _aiRecommendations = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDashboardData();
+  }
+
+  Future<void> _loadDashboardData() async {
+    try {
+      // Load spending data and generate charts
+      final expenses = await ChatService.loadBudgetEntries();
+      print('Expenses loaded: $expenses');
+      final spendingData = _generateSpendingData(expenses);
+      final categoryData = _generateCategoryData(expenses);
+      print('Spending Data: $spendingData');
+      print('Category Data: $categoryData');
+
+      // Get AI insights and recommendations
+      final insights = await ChatService.getChatResponse('Provide insights into my spending patterns.', _formatNotes(expenses));
+      final recommendations = await ChatService.getChatResponse('Give me personalized recommendations to increase my wealth.', _formatNotes(expenses));
+      print('AI Insights: $insights');
+      print('AI Recommendations: $recommendations');
+
+      setState(() {
+        _spendingData = spendingData;
+        _categoryData = categoryData;
+        _aiInsights = insights;
+        _aiRecommendations = recommendations;
+      });
+    } catch (e) {
+      print('Error loading dashboard data: $e');
+    }
+  }
+
+  List<_SpendingData> _generateSpendingData(List<Map<String, dynamic>> expenses) {
+    // Generate spending data for charts
+    return expenses.map((expense) {
+      return _SpendingData(DateTime.parse(expense['date']), expense['amount']);
+    }).toList();
+  }
+
+  List<_CategoryData> _generateCategoryData(List<Map<String, dynamic>> expenses) {
+    // Generate category data for charts
+    Map<String, double> categoryTotals = {};
+    for (var expense in expenses) {
+      if (categoryTotals.containsKey(expense['title'])) {
+        categoryTotals[expense['title']] = categoryTotals[expense['title']]! + expense['amount'];
+      } else {
+        categoryTotals[expense['title']] = expense['amount'];
+      }
+    }
+    return categoryTotals.entries.map((entry) {
+      return _CategoryData(entry.key, entry.value);
+    }).toList();
+  }
+
+  Map<String, List<Map<String, dynamic>>> _formatNotes(List<Map<String, dynamic>> expenses) {
+    // Format notes for AI request
+    Map<String, List<Map<String, dynamic>>> notes = {};
+    for (var expense in expenses) {
+      String date = expense['date'];
+      if (!notes.containsKey(date)) {
+        notes[date] = [];
+      }
+      notes[date]!.add({
+        'title': expense['title'],
+        'amount': expense['amount'],
+        'currency': expense['currency'],
+      });
+    }
+    return notes;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Color(0xFF123456),
+        title: Text('Dashboard', style: TextStyle(color: Colors.white)),
+      ),
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              Text('Spending Over Time', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              SizedBox(
+                height: 200,
+                child: SfCartesianChart(
+                  primaryXAxis: DateTimeAxis(),
+                  series: <ChartSeries>[
+                    LineSeries<_SpendingData, DateTime>(
+                      dataSource: _spendingData,
+                      xValueMapper: (_SpendingData data, _) => data.date,
+                      yValueMapper: (_SpendingData data, _) => data.amount,
+                    )
+                  ],
+                ),
+              ),
+              SizedBox(height: 16),
+              Text('Spending by Category', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              SizedBox(
+                height: 200,
+                child: SfCircularChart(
+                  series: <CircularSeries>[
+                    PieSeries<_CategoryData, String>(
+                      dataSource: _categoryData,
+                      xValueMapper: (_CategoryData data, _) => data.category,
+                      yValueMapper: (_CategoryData data, _) => data.amount,
+                    )
+                  ],
+                ),
+              ),
+              SizedBox(height: 16),
+              Text('AI Insights', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              Container(
+                padding: EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(_aiInsights),
+              ),
+              SizedBox(height: 16),
+              Text('Personalized Recommendations', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              Container(
+                padding: EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(_aiRecommendations),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SpendingData {
+  _SpendingData(this.date, this.amount);
+
+  final DateTime date;
+  final double amount;
+}
+
+class _CategoryData {
+  _CategoryData(this.category, this.amount);
+
+  final String category;
+  final double amount;
 }

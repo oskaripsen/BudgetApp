@@ -10,7 +10,8 @@ dependencies:
   flutter:
     sdk: flutter
   table_calendar: ^3.0.0
-  http: ^1.1.0 
+  syncfusion_flutter_charts: ^20.2.48  # Use syncfusion_flutter_charts instead of fl_chart
+  http: ^1.3.0  
 
 dev_dependencies:
   flutter_test:
