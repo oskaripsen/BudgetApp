@@ -26,8 +26,10 @@
     script-src 'self' 'unsafe-eval' https://www.gstatic.com https://fonts.googleapis.com; 
     style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; 
     font-src 'self' https://fonts.gstatic.com; 
-    connect-src 'self' https://www.gstatic.com; 
-    img-src 'self' data:;     object-src 'none';  ">
+    connect-src 'self' https://www.gstatic.com https://fonts.gstatic.com; 
+    img-src 'self' data:; 
+    object-src 'none';
+  ">
 </head>
 <body>
   <script src="flutter.js" defer></script>
