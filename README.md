@@ -1,6 +1,6 @@
-# calendar_week
+# BudgetApp
 
-A new Flutter project.
+A Flutter application for managing personal finances and tracking expenses.
 
 ## Getting Started
 
